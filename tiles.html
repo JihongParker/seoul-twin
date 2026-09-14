@@ -13,6 +13,8 @@
   @media (max-width: 720px) { .cesium-viewer-bottom { left: 12px; bottom: 40px; } }
   #lm { position: fixed; top: 64px; left: 12px; z-index: 20; width: 240px; max-height: 60vh; overflow-y: auto;
     background: var(--bg); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+  #lm .toggles { display: flex; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+  #lm .toggles input { accent-color: var(--accent); margin-right: 4px; }
   #lm h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 6px; }
   #lm button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 5px 4px; cursor: pointer; border-radius: 4px; }
   #lm button:hover { background: rgba(255,255,255,.08); }
@@ -38,9 +40,16 @@
   <a class="icon" id="btn-back" href="index.html" title="기본 모드로">기본 모드</a>
 </header>
 
-<aside id="lm"><h2>랜드마크</h2></aside>
+<aside id="lm">
+  <div class="toggles">
+    <label><input type="checkbox" id="ly-subway" checked> 지하철</label>
+    <label><input type="checkbox" id="ly-gu" checked> 자치구</label>
+    <label><input type="checkbox" id="ly-bld" checked> 건물</label>
+  </div>
+  <h2>랜드마크</h2>
+</aside>
 <div id="note">
-  Overture Maps 와 OpenStreetMap 건물 외곽선을 Re:Earth 가 3D Tiles 로 변환한 메시입니다. 높이 정보가 없는 건물은 기본 높이로 표시됩니다. 지형은 Re:Earth Terrain(Mapterhorn) 양자화 메시입니다. 키 없이 동작하며 처음 로딩에 수 초가 걸립니다.
+  Overture Maps 와 OpenStreetMap 건물 외곽선을 Re:Earth 가 3D Tiles 로 변환한 메시입니다. 지하철과 자치구 경계는 기본 모드와 같은 자료를 지형 위에 붙였습니다. 높이 정보가 없는 건물은 기본 높이로 표시됩니다. 지형은 Re:Earth Terrain(Mapterhorn) 양자화 메시입니다. 키 없이 동작하며 처음 로딩에 수 초가 걸립니다.
 </div>
 <div id="status"><span id="st-pos"></span><span id="st-help">드래그 이동 · 휠 확대 · 우클릭 드래그 회전 · 가운데 버튼 드래그 기울기</span></div>
 
@@ -87,6 +96,47 @@
     const height = 40075016 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z) * 0.9;
     view(lon, lat, Math.max(300, height), bearing, -Math.max(15, 90 - pitch), 0);
   } else view(HOME.lon, HOME.lat, HOME.height, HOME.heading, HOME.pitch, 0);
+
+  // 지하철, 자치구 (기본 모드와 같은 data/ 재사용, 지형 위에 붙임)
+  const layers = {};
+  try {
+    layers.subway = await Cesium.GeoJsonDataSource.load('data/subway_lines.geojson', { clampToGround: true });
+    layers.subway.entities.values.forEach((en) => {
+      if (!en.polyline) return;
+      const c = (en.properties.colour && en.properties.colour.getValue()) || '#888888';
+      en.polyline.material = Cesium.Color.fromCssColorString(c).withAlpha(0.95);
+      en.polyline.width = 4; en.polyline.clampToGround = true;
+    });
+    viewer.dataSources.add(layers.subway);
+    layers.stations = await Cesium.GeoJsonDataSource.load('data/subway_stations.geojson', { clampToGround: true });
+    layers.stations.entities.values.forEach((en) => {
+      en.billboard = undefined;
+      en.point = new Cesium.PointGraphics({ pixelSize: 6, color: Cesium.Color.WHITE, outlineColor: Cesium.Color.fromCssColorString('#1f2a3a'), outlineWidth: 2, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 6000) });
+      en.label = new Cesium.LabelGraphics({ text: en.properties.name.getValue(), font: '12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.fromCssColorString('#0b1220'), outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.TOP, pixelOffset: new Cesium.Cartesian2(0, 8), heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 2500) });
+    });
+    viewer.dataSources.add(layers.stations);
+    layers.gu = await Cesium.GeoJsonDataSource.load('data/seoul_gu.geojson', { clampToGround: true, fill: Cesium.Color.fromCssColorString('#6fa8ff').withAlpha(0.04) });
+    const guLine = Cesium.Color.fromCssColorString('#6fa8ff').withAlpha(0.9);
+    layers.gu.entities.values.slice().forEach((en) => {
+      const p = en.properties, c = p.centroid.getValue();
+      if (en.polygon) {
+        en.polygon.outline = false;
+        const hier = en.polygon.hierarchy.getValue(Cesium.JulianDate.now());
+        [hier].concat(hier.holes || []).forEach((h) => {
+          layers.gu.entities.add({ polyline: { positions: h.positions, width: 2.5, material: guLine, clampToGround: true } });
+        });
+      }
+      en.label = new Cesium.LabelGraphics({ text: p.name.getValue(), font: 'bold 14px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.fromCssColorString('#0b1220'), outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, distanceDisplayCondition: new Cesium.DistanceDisplayCondition(2500, 60000), disableDepthTestDistance: Number.POSITIVE_INFINITY });
+      en.position = Cesium.Cartesian3.fromDegrees(c[0], c[1], 0);
+    });
+    viewer.dataSources.add(layers.gu);
+  } catch (e) { console.warn('층 데이터를 불러오지 못했습니다', e); }
+  const toggle = (id, fn) => { $(id).onchange = (e) => fn(e.target.checked); };
+  toggle('ly-subway', (on) => { if (layers.subway) layers.subway.show = on; if (layers.stations) layers.stations.show = on; });
+  toggle('ly-gu', (on) => { if (layers.gu) layers.gu.show = on; });
+  toggle('ly-bld', (on) => { if (tileset) tileset.show = on; });
 
   // 랜드마크
   const landmarks = await fetch('data/landmarks.json').then((r) => r.json());
@@ -157,7 +207,7 @@
 
   const hide = () => $('splash').classList.add('done');
   if (tileset) { const off = tileset.initialTilesLoaded.addEventListener(() => { hide(); off(); }); setTimeout(hide, 12000); } else hide();
-  window.twinTiles = { viewer, tileset, landmarks, flyLandmark, setTour, setRotate };
+  window.twinTiles = { viewer, tileset, landmarks, layers, flyLandmark, setTour, setRotate };
 })();
 </script>
 </body>

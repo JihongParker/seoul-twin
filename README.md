@@ -14,7 +14,8 @@
 | 엔진 | MapLibre GL JS 5 | CesiumJS 1.145 |
 | 건물 | OpenFreeMap 벡터 타일의 OpenStreetMap 높이를 압출 | Re:Earth Buildings 3D Tiles (Overture Maps, OpenStreetMap 외곽선) |
 | 지형 | AWS Terrain Tiles (Terrarium) | Re:Earth Terrain 양자화 메시 (Mapterhorn) |
-| 층 | 자치구 25곳, 지하철 10개 노선과 역 338곳, 랜드마크 16곳 | 랜드마크 16곳 |
+| 바탕 | OpenFreeMap liberty, fiord(밤) | OpenStreetMap 표준 래스터 |
+| 층 | 자치구 25곳, 지하철 10개 노선과 역 338곳, 랜드마크 16곳 | 같은 자치구·지하철·랜드마크 자료를 지형 위에 붙임 |
 | 특징 | 높이 필터, 시각별 조명과 낮·밤 전환, 자치구 정보 패널, Grok 질의 | 건물 메시가 촘촘하고 지형이 정확함 |
 
 두 모드는 같은 시점(URL 해시)을 주고받습니다. 기본 모드에서 보던 자리 그대로 정밀 모드로 넘어가고 돌아올 수 있습니다.
@@ -50,7 +51,7 @@
 - Cesium ion, Google Photorealistic 3D Tiles, Mapbox, V-World 는 모두 키가 필요합니다. 이 저장소는 공개 정적 호스팅이 목표라 키가 없는 자료만 골랐습니다.
 - MapLibre 6 은 ESM 전용 배포라 cdnjs 에 UMD 번들이 없습니다. 스크립트 태그 한 줄로 끝내기 위해 5.24 를 씁니다.
 - deck.gl 의 Tile3DLayer 로 Re:Earth 3D Tiles 를 올리는 방법은 시험했으나 전 지구 region 경계 볼륨을 가진 외부 tileset 트리를 순회하지 못해 타일이 선택되지 않았습니다. CesiumJS 는 같은 tileset 을 문제없이 그려서 정밀 모드는 CesiumJS 로 분리했습니다.
-- OpenStreetMap 표준 타일은 정밀 모드의 바탕 이미지로만 씁니다. 트래픽이 커지면 다른 래스터 소스로 바꿔야 합니다.
+- 정밀 모드의 바탕 이미지는 OpenStreetMap 표준 타일입니다. CARTO 래스터는 2026년 현재 키 없이는 워터마크가 찍혀 쓸 수 없었습니다. 트래픽이 커지면 키 있는 래스터로 바꿔야 합니다.
 
 ## 저작권 표시
 
