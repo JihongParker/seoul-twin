@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>서울 트윈 정밀 모드</title>
+<meta name="description" content="Overture 건물 3D Tiles 와 지형 메시로 서울을 보는 CesiumJS 정밀 모드.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cesium/1.145.0/Widgets/widgets.css">
+<link rel="stylesheet" href="style.css">
+<style>
+  #cesium { position: fixed; inset: 0; }
+  .cesium-viewer-bottom { left: 300px; bottom: 14px; }
+  @media (max-width: 720px) { .cesium-viewer-bottom { left: 12px; bottom: 40px; } }
+  #lm { position: fixed; top: 64px; left: 12px; z-index: 20; width: 240px; max-height: 60vh; overflow-y: auto;
+    background: var(--bg); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+  #lm h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 6px; }
+  #lm button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 5px 4px; cursor: pointer; border-radius: 4px; }
+  #lm button:hover { background: rgba(255,255,255,.08); }
+  #lm button small { color: var(--muted); float: right; }
+  #note { position: fixed; right: 12px; top: 64px; width: 300px; max-width: calc(100% - 24px); z-index: 20; font-size: 12px; color: var(--muted);
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+  @media (max-width: 720px) { #lm { top: auto; bottom: 44px; width: auto; right: 12px; max-height: 36vh; } #note { display: none; } }
+</style>
+</head>
+<body>
+<div id="cesium"></div>
+<div id="splash">
+  <img src="img/hero.webp" alt="서울 야경 조감도">
+  <div class="splash-text"><h1>서울 트윈 정밀 모드</h1><p>건물 메시와 지형을 불러오는 중입니다.</p></div>
+</div>
+
+<header id="topbar">
+  <div class="brand">서울 트윈 · 정밀 모드</div>
+  <div class="spacer"></div>
+  <button id="btn-rotate" class="icon" title="자동 회전 (R)">회전</button>
+  <button id="btn-tour" class="icon" title="랜드마크 투어 (T)">투어</button>
+  <button id="btn-home" class="icon" title="처음 시점 (H)">처음</button>
+  <a class="icon" id="btn-back" href="index.html" title="기본 모드로">기본 모드</a>
+</header>
+
+<aside id="lm"><h2>랜드마크</h2></aside>
+<div id="note">
+  Overture Maps 와 OpenStreetMap 건물 외곽선을 Re:Earth 가 3D Tiles 로 변환한 메시입니다. 높이 정보가 없는 건물은 기본 높이로 표시됩니다. 지형은 Re:Earth Terrain(Mapterhorn) 양자화 메시입니다. 키 없이 동작하며 처음 로딩에 수 초가 걸립니다.
+</div>
+<div id="status"><span id="st-pos"></span><span id="st-help">드래그 이동 · 휠 확대 · 우클릭 드래그 회전 · 가운데 버튼 드래그 기울기</span></div>
+
+<script>window.CESIUM_BASE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/cesium/1.145.0/';</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cesium/1.145.0/Cesium.js"></script>
+<script>
+(async function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const HOME = { lon: 126.9882, lat: 37.5313, height: 2600, heading: -18, pitch: -38 };
+
+  const viewer = new Cesium.Viewer('cesium', {
+    baseLayer: new Cesium.ImageryLayer(new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/', credit: '© OpenStreetMap contributors' })),
+    baseLayerPicker: false, geocoder: false, timeline: false, animation: false, sceneModePicker: false,
+    navigationHelpButton: false, homeButton: false, infoBox: false, selectionIndicator: false, fullscreenButton: true,
+    contextOptions: { webgl: { preserveDrawingBuffer: true } }
+  });
+  viewer.scene.globe.depthTestAgainstTerrain = true;
+  viewer.scene.globe.enableLighting = true;
+  viewer.scene.skyAtmosphere.show = true;
+  viewer.scene.fog.enabled = true;
+  viewer.scene.msaaSamples = 4;
+
+  try {
+    viewer.terrainProvider = await Cesium.CesiumTerrainProvider.fromUrl('https://terrain.reearth.land/cesium-mesh/ellipsoid', { requestVertexNormals: true });
+  } catch (e) { console.warn('지형 메시를 불러오지 못했습니다', e); }
+
+  let tileset = null;
+  try {
+    tileset = await Cesium.Cesium3DTileset.fromUrl('https://buildings.reearth.land/tileset.json', { maximumScreenSpaceError: 12, skipLevelOfDetail: true });
+    tileset.style = new Cesium.Cesium3DTileStyle({ color: "color('#e3e8ef')" });
+    viewer.scene.primitives.add(tileset);
+  } catch (e) { console.warn('건물 타일을 불러오지 못했습니다', e); }
+  viewer.scene.frameState.creditDisplay.addStaticCredit(new Cesium.Credit('건물 <a href="https://buildings.reearth.land/" target="_blank">Re:Earth Buildings</a> (Overture, OpenStreetMap) · 지형 <a href="https://terrain.reearth.land/" target="_blank">Re:Earth Terrain</a> (Mapterhorn)', true));
+
+  function view(lon, lat, height, heading, pitch, dur) {
+    viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+      orientation: { heading: Cesium.Math.toRadians(heading), pitch: Cesium.Math.toRadians(pitch), roll: 0 }, duration: dur });
+  }
+  // 기본 모드에서 넘어온 시점(#zoom/lat/lon/bearing/pitch)을 이어받는다
+  const h = location.hash.slice(1).split('/').map(Number);
+  if (h.length >= 3 && h.every((n) => !Number.isNaN(n))) {
+    const [z, lat, lon, bearing = 0, pitch = 60] = h;
+    const height = 40075016 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z) * 0.9;
+    view(lon, lat, Math.max(300, height), bearing, -Math.max(15, 90 - pitch), 0);
+  } else view(HOME.lon, HOME.lat, HOME.height, HOME.heading, HOME.pitch, 0);
+
+  // 랜드마크
+  const landmarks = await fetch('data/landmarks.json').then((r) => r.json());
+  landmarks.forEach((l) => {
+    viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(l.lon, l.lat, (l.height || 30) + 20),
+      point: { pixelSize: 9, color: Cesium.Color.fromCssColorString('#ffb454'), outlineColor: Cesium.Color.fromCssColorString('#3a2a00'), outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+      label: { text: l.name, font: '13px sans-serif', fillColor: Cesium.Color.fromCssColorString('#ffd79a'), outlineColor: Cesium.Color.fromCssColorString('#0b1220'), outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM, pixelOffset: new Cesium.Cartesian2(0, -12), disableDepthTestDistance: Number.POSITIVE_INFINITY } });
+    const b = document.createElement('button');
+    b.innerHTML = l.name + (l.height ? '<small>' + l.height + ' m</small>' : '');
+    b.onclick = () => flyLandmark(l);
+    $('lm').append(b);
+  });
+  function flyLandmark(l) {
+    const peak = l.kind === 'peak';
+    const dist = peak ? 4000 : Math.max(700, (l.height || 40) * 3);
+    const heading = (viewer.camera.heading * 180 / Math.PI + 40) % 360;
+    const dLat = -Math.cos(heading * Math.PI / 180) * dist * 0.8 / 111320;
+    const dLon = -Math.sin(heading * Math.PI / 180) * dist * 0.8 / (111320 * Math.cos(l.lat * Math.PI / 180));
+    view(l.lon + dLon, l.lat + dLat, (peak ? 1200 : (l.height || 40) + dist * 0.6), heading, peak ? -20 : -32, 2.5);
+  }
+
+  // 회전, 투어
+  let rotating = false, touring = false, idx = 0, tourTimer = null, rotListener = null;
+  function setRotate(on) {
+    rotating = on; $('btn-rotate').classList.toggle('on', on);
+    if (rotListener) { viewer.clock.onTick.removeEventListener(rotListener); rotListener = null; }
+    if (!on) return;
+    rotListener = () => {
+      const ray = viewer.camera.getPickRay(new Cesium.Cartesian2(viewer.canvas.clientWidth / 2, viewer.canvas.clientHeight / 2));
+      const center = ray && viewer.scene.globe.pick(ray, viewer.scene);
+      if (center) { viewer.camera.lookAt(center, new Cesium.HeadingPitchRange(viewer.camera.heading + 0.0025, viewer.camera.pitch, Cesium.Cartesian3.distance(viewer.camera.position, center))); viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY); }
+    };
+    viewer.clock.onTick.addEventListener(rotListener);
+  }
+  function setTour(on) {
+    touring = on; $('btn-tour').classList.toggle('on', on); clearTimeout(tourTimer);
+    if (!on) { setRotate(false); return; }
+    step();
+  }
+  function step() {
+    if (!touring) return;
+    setRotate(false);
+    flyLandmark(landmarks[idx % landmarks.length]); idx++;
+    tourTimer = setTimeout(() => { if (touring) { setRotate(true); tourTimer = setTimeout(step, 5000); } }, 2600);
+  }
+  viewer.canvas.addEventListener('pointerdown', () => { if (rotating && !touring) setRotate(false); });
+  viewer.canvas.addEventListener('wheel', () => { if (rotating && !touring) setRotate(false); }, { passive: true });
+  $('btn-rotate').onclick = () => { if (touring) setTour(false); setRotate(!rotating); };
+  $('btn-tour').onclick = () => setTour(!touring);
+  $('btn-home').onclick = () => view(HOME.lon, HOME.lat, HOME.height, HOME.heading, HOME.pitch, 2);
+  document.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if (k === 'r') $('btn-rotate').click(); else if (k === 't') $('btn-tour').click(); else if (k === 'h') $('btn-home').click();
+    else if (k === 'escape' && touring) setTour(false);
+  });
+
+  // 상태 표시와 기본 모드 링크 동기화
+  viewer.camera.changed.addEventListener(() => {
+    const c = Cesium.Cartographic.fromCartesian(viewer.camera.positionWC);
+    const lat = Cesium.Math.toDegrees(c.latitude), lon = Cesium.Math.toDegrees(c.longitude);
+    const heading = Math.round(Cesium.Math.toDegrees(viewer.camera.heading));
+    $('st-pos').textContent = lat.toFixed(4) + ', ' + lon.toFixed(4) + ' · 고도 ' + Math.round(c.height) + ' m · 방위 ' + heading + '°';
+    const zoom = Math.log2(40075016 * Math.cos(c.latitude) / Math.max(50, c.height)) - 0.15;
+    $('btn-back').href = 'index.html#' + zoom.toFixed(2) + '/' + lat.toFixed(5) + '/' + lon.toFixed(5) + '/' + heading + '/' + Math.round(90 + Cesium.Math.toDegrees(viewer.camera.pitch));
+  });
+  viewer.camera.percentageChanged = 0.01;
+
+  const hide = () => $('splash').classList.add('done');
+  if (tileset) { const off = tileset.initialTilesLoaded.addEventListener(() => { hide(); off(); }); setTimeout(hide, 12000); } else hide();
+  window.twinTiles = { viewer, tileset, landmarks, flyLandmark, setTour, setRotate };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>서울 트윈</title>
+<meta name="description" content="서울 3D 디지털 트윈. 건물 높이, 지형, 25개 자치구, 지하철 노선을 회전·확대·기울여 볼 수 있는 정적 웹 지도.">
+<meta property="og:title" content="서울 트윈">
+<meta property="og:description" content="서울 3D 디지털 트윈. 회전·확대·기울기, 자치구·지하철·랜드마크 층.">
+<meta property="og:image" content="https://jihongparker.github.io/seoul-twin/img/og.jpg">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='14' width='6' height='14' fill='%233f78b8'/%3E%3Crect x='13' y='6' width='6' height='22' fill='%231f4f8f'/%3E%3Crect x='22' y='11' width='6' height='17' fill='%237fa3c9'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.24.0/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map" role="application" aria-label="서울 3D 지도"></div>
+
+<div id="splash">
+  <img src="img/hero.webp" alt="서울 야경 조감도">
+  <div class="splash-text">
+    <h1>서울 트윈</h1>
+    <p>건물과 지형을 3D 로 불러오는 중입니다.</p>
+  </div>
+</div>
+
+<header id="topbar">
+  <button id="btn-panel" class="icon" title="패널 열기/닫기 (P)" aria-label="패널">≡</button>
+  <div class="brand">서울 트윈</div>
+  <div class="search">
+    <input id="search" list="search-list" placeholder="자치구, 랜드마크, 역 이름" autocomplete="off">
+    <datalist id="search-list"></datalist>
+  </div>
+  <div class="spacer"></div>
+  <button id="btn-north" class="icon" title="북쪽 맞춤 (N)">N</button>
+  <button id="btn-rotate" class="icon" title="자동 회전 (R)">회전</button>
+  <button id="btn-tour" class="icon" title="랜드마크 투어 (T)">투어</button>
+  <button id="btn-shot" class="icon" title="화면 저장">저장</button>
+  <button id="btn-share" class="icon" title="현재 시점 링크 복사">링크</button>
+  <a id="btn-tiles" class="icon" href="tiles.html" title="Overture 건물 메시와 지형 메시로 보는 CesiumJS 모드">정밀 모드</a>
+</header>
+
+<aside id="panel" aria-label="설정 패널">
+  <section>
+    <h2>층</h2>
+    <label><input type="checkbox" id="ly-buildings" checked> 건물 (OpenStreetMap 높이)</label>
+    <label><input type="checkbox" id="ly-terrain" checked> 지형</label>
+    <label><input type="checkbox" id="ly-gu" checked> 자치구 경계</label>
+    <label><input type="checkbox" id="ly-subway" checked> 지하철</label>
+    <label><input type="checkbox" id="ly-landmarks" checked> 랜드마크</label>
+  </section>
+
+  <section>
+    <h2>건물</h2>
+    <label class="range">높이 필터 <span id="v-minh">0 m 이상</span>
+      <input type="range" id="minh" min="0" max="200" step="5" value="0"></label>
+    <label class="range">불투명도 <span id="v-opac">90%</span>
+      <input type="range" id="opac" min="20" max="100" step="5" value="90"></label>
+    <div class="legend" id="legend">
+      <span style="--c:#d9dde3">0</span><span style="--c:#b9c6d6">30</span><span style="--c:#7fa3c9">80</span><span style="--c:#3f78b8">150</span><span style="--c:#1f4f8f">300 m</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>지형과 시각</h2>
+    <label class="range">지형 과장 <span id="v-exag">1.2배</span>
+      <input type="range" id="exag" min="0" max="3" step="0.1" value="1.2"></label>
+    <label class="range">시각 <span id="v-hour">14시</span>
+      <input type="range" id="hour" min="0" max="24" step="0.5" value="14"></label>
+  </section>
+
+  <section>
+    <h2>지하철 노선</h2>
+    <div id="lines" class="lines"></div>
+  </section>
+
+  <section>
+    <h2>Grok 에게 묻기</h2>
+    <p class="hint">xAI API 키를 넣으면 현재 화면 위치와 선택한 구를 문맥으로 grok-4.6 이 웹 검색을 곁들여 답합니다. 키는 이 브라우저에만 저장됩니다.</p>
+    <input id="xai-key" type="password" placeholder="xai-...">
+    <textarea id="xai-q" rows="2" placeholder="예: 이 구의 최근 재개발 계획은?"></textarea>
+    <button id="xai-ask">질문</button>
+    <div id="xai-a" class="answer" hidden></div>
+  </section>
+
+  <section class="about">
+    <h2>자료</h2>
+    <p>기본 모드 건물·도로: OpenFreeMap (OpenMapTiles, OpenStreetMap). 지형: AWS Terrain Tiles (Mapzen). 정밀 모드: Re:Earth Buildings 3D Tiles (Overture, OpenStreetMap), Re:Earth Terrain (Mapterhorn), CesiumJS. 자치구: 통계청 경계. 지하철·랜드마크: OpenStreetMap Overpass. 설명문 초안: grok-4.6, 검수 후 수록. 대표 이미지: grok-imagine-image-2.0.</p>
+    <p><a href="https://github.com/JihongParker/seoul-twin" target="_blank" rel="noopener">저장소</a> · <a href="https://jihongparker.github.io/" target="_blank" rel="noopener">포트폴리오</a></p>
+  </section>
+</aside>
+
+<aside id="info" hidden aria-live="polite">
+  <button id="info-close" class="icon" aria-label="닫기">×</button>
+  <div class="kicker" id="info-kicker"></div>
+  <h3 id="info-title"></h3>
+  <p id="info-desc"></p>
+  <dl id="info-facts"></dl>
+</aside>
+
+<div id="status">
+  <span id="st-pos"></span>
+  <span id="st-help">드래그 이동 · 휠 확대 · 우클릭 또는 Ctrl+드래그 회전 · Shift+화살표 기울기</span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.24.0/maplibre-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
